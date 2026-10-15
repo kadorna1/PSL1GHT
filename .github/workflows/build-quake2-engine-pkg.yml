@@ -61,16 +61,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          make -f Makefile.ps3 -j1 \
+          make_args=( \
             BUILD=build-rsx TARGET=q2ps3 \
-            'TITLE=Quake II PS3 (game data required)' \
+            "TITLE=Quake II PS3 (game data required)" \
             APPID=QUAKE2000 \
             CONTENTID=UP0001-QUAKE2000_00-0000000000000000 \
-            ICON0="$PS3DEV/bin/ICON0.PNG" PKGFILES= \
+            "ICON0=$PS3DEV/bin/ICON0.PNG" PKGFILES= \
             PS3_NATIVE_RSX=1 PS3_CAMERA=0 PS3_MOVE=0 \
             PS3_V198_OSK_RECOVERY=1 PS3_FORCE_FONT_SAMPLER_PER_DRAW=1 \
             PS3_USB_INPUT_BRIDGE=0 PS3_POLYBLEND_2D_OVERRIDE=0 \
-            PS3_SCENE_SCALE_BRIDGE=0 PS3_SAFE_VIDEO=0 q2ps3.pkg
+            PS3_SCENE_SCALE_BRIDGE=0 PS3_SAFE_VIDEO=0 \
+          ) \
+          # First run the recursive build target to compile the ELF and SELF. \
+          make -f Makefile.ps3 -j1 "${make_args[@]}" \
+          # Then run the PSL1GHT package rule using those built outputs. \
+          make -f Makefile.ps3 -j1 "${make_args[@]}" q2ps3.pkg
           test -s q2ps3.elf
           test -s q2ps3.self
           test -s q2ps3.gnpdrm.pkg
