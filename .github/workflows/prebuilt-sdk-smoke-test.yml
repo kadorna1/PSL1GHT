@@ -1,0 +1,103 @@
+name: Bucanero precompiled SDK smoke test
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - ".github/workflows/prebuilt-sdk-smoke-test.yml"
+      - "ci/install-bucanero-prebuilt-ps3dev.sh"
+      - "samples/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-test:
+    name: Install and compile PSL1GHT sample
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out PSL1GHT source
+        uses: actions/checkout@v6
+
+      - name: Install host build utilities
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential binutils file ca-certificates curl
+
+      - name: Download, verify, and install Bucanero's prebuilt SDK
+        shell: bash
+        run: bash ci/install-bucanero-prebuilt-ps3dev.sh "$RUNNER_TEMP/ps3dev"
+
+      - name: Configure SDK environment
+        shell: bash
+        run: |
+          echo "PS3DEV=$RUNNER_TEMP/ps3dev" >> "$GITHUB_ENV"
+          echo "PSL1GHT=$RUNNER_TEMP/ps3dev" >> "$GITHUB_ENV"
+          printf '%s\n' \
+            "$RUNNER_TEMP/ps3dev/bin" \
+            "$RUNNER_TEMP/ps3dev/ppu/bin" \
+            "$RUNNER_TEMP/ps3dev/spu/bin" >> "$GITHUB_PATH"
+
+      - name: Verify installed PPU/SPU toolchain
+        shell: bash
+        run: |
+          test -x "$PS3DEV/ppu/bin/ppu-gcc"
+          test -x "$PS3DEV/spu/bin/spu-gcc"
+          test -f "$PSL1GHT/ppu_rules"
+          test -f "$PSL1GHT/base_rules"
+          "$PS3DEV/ppu/bin/ppu-gcc" --version
+          "$PS3DEV/spu/bin/spu-gcc" --version
+
+      - name: Build threadtest ELF and SELF
+        shell: bash
+        run: |
+          make -C samples/sys/threadtest clean
+          make -C samples/sys/threadtest V=1
+          test -s samples/sys/threadtest/threadtest.elf
+          test -s samples/sys/threadtest/threadtest.self
+          "$PS3DEV/ppu/bin/ppu-readelf" -h samples/sys/threadtest/threadtest.elf
+          file samples/sys/threadtest/threadtest.elf samples/sys/threadtest/threadtest.self
+
+      - name: Write smoke-test report
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        shell: bash
+        run: |
+          {
+            echo "Bucanero precompiled PS3DEV/PSL1GHT smoke test"
+            echo "Release: nightly-2026-10-12"
+            echo "Expected archive SHA256: 76b1b3bc9ac260a4ece86da520225da7f2f4e334174e37b850093ff925eeb900"
+            echo "Job status: $JOB_STATUS"
+            echo "Host: $(uname -a)"
+            if [[ -n "${PS3DEV:-}" ]]; then
+              echo "Install path: $PS3DEV"
+              if [[ -x "$PS3DEV/ppu/bin/ppu-gcc" ]]; then
+                "$PS3DEV/ppu/bin/ppu-gcc" --version | head -n 1
+              fi
+            fi
+            if [[ -s samples/sys/threadtest/threadtest.elf ]]; then
+              echo "PPU ELF: built"
+            else
+              echo "PPU ELF: missing"
+            fi
+            if [[ -s samples/sys/threadtest/threadtest.self ]]; then
+              echo "SELF: built"
+            else
+              echo "SELF: missing"
+            fi
+          } | tee "$RUNNER_TEMP/prebuilt-sdk-smoke-report.txt"
+
+      - name: Upload report and build outputs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: bucanero-prebuilt-sdk-smoke-test
+          path: |
+            ${{ runner.temp }}/prebuilt-sdk-smoke-report.txt
+            samples/sys/threadtest/threadtest.elf
+            samples/sys/threadtest/threadtest.self
+          if-no-files-found: warn
+          retention-days: 14
