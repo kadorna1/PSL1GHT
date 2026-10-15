@@ -1,14 +1,94 @@
 name: Quake II PS3 engine-only PKG build
 
-on: [push, workflow_dispatch]
+on:
+  push:
+    branches: [master]
+    paths:
+      - ".github/workflows/build-quake2-engine-pkg.yml"
+      - "ci/prepare-quake2-engine-only.sh"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  validate:
+  build-engine-only-pkg:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - name: Confirm workflow starts
+      - name: Check out build scripts
+        uses: actions/checkout@v6
+
+      - name: Check out Quake II PS3 source
+        uses: actions/checkout@v6
+        with:
+          repository: kevums/quake-ii-ps3-v221
+          ref: main
+          path: quake-src
+
+      - name: Install host tools
         run: |
-          echo "Quake II engine-only package build workflow validated."
+          sudo apt-get update
+          sudo apt-get install -y build-essential binutils file curl ca-certificates python3 tar gzip
+
+      - name: Download and verify Bucanero's precompiled PS3DEV/PSL1GHT
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://github.com/ps3dev/ps3dev/releases/download/nightly-2026-10-12/ps3dev-linux-X64.tar.gz"
+          SHA256="76b1b3bc9ac260a4ece86da520225da7f2f4e334174e37b850093ff925eeb900"
+          mkdir -p "$RUNNER_TEMP/sdk-extract"
+          curl --fail --location --retry 3 --retry-all-errors --connect-timeout 20 --output "$RUNNER_TEMP/ps3dev.tar.gz" "$URL"
+          echo "$SHA256  $RUNNER_TEMP/ps3dev.tar.gz" | sha256sum --check -
+          tar -xzf "$RUNNER_TEMP/ps3dev.tar.gz" -C "$RUNNER_TEMP/sdk-extract"
+          test -x "$RUNNER_TEMP/sdk-extract/ps3dev/ppu/bin/ppu-gcc"
+          test -x "$RUNNER_TEMP/sdk-extract/ps3dev/spu/bin/spu-gcc"
+          test -f "$RUNNER_TEMP/sdk-extract/ps3dev/ppu_rules"
+          mv "$RUNNER_TEMP/sdk-extract/ps3dev" "$RUNNER_TEMP/ps3dev"
+          echo "PS3DEV=$RUNNER_TEMP/ps3dev" >> "$GITHUB_ENV"
+          echo "PSL1GHT=$RUNNER_TEMP/ps3dev" >> "$GITHUB_ENV"
+          echo "PORTLIBS=$RUNNER_TEMP/ps3dev/portlibs/ppu" >> "$GITHUB_ENV"
+          printf '%s\n' "$RUNNER_TEMP/ps3dev/bin" "$RUNNER_TEMP/ps3dev/ppu/bin" "$RUNNER_TEMP/ps3dev/spu/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/ps3dev/ppu/bin/ppu-gcc" --version
+          "$RUNNER_TEMP/ps3dev/spu/bin/spu-gcc" --version
+
+      - name: Prepare clean engine-only source
+        working-directory: quake-src
+        run: bash "$GITHUB_WORKSPACE/ci/prepare-quake2-engine-only.sh"
+
+      - name: Build installable engine-only package
+        working-directory: quake-src
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -f Makefile.ps3 -j1 \
+            BUILD=build-rsx TARGET=q2ps3 \
+            'TITLE=Quake II PS3 (game data required)' \
+            APPID=QUAKE2000 \
+            CONTENTID=UP0001-QUAKE2000_00-0000000000000000 \
+            ICON0="$PS3DEV/bin/ICON0.PNG" PKGFILES= \
+            PS3_NATIVE_RSX=1 PS3_CAMERA=0 PS3_MOVE=0 \
+            PS3_V198_OSK_RECOVERY=1 PS3_FORCE_FONT_SAMPLER_PER_DRAW=1 \
+            PS3_USB_INPUT_BRIDGE=0 PS3_POLYBLEND_2D_OVERRIDE=0 \
+            PS3_SCENE_SCALE_BRIDGE=0 PS3_SAFE_VIDEO=0 q2ps3.pkg
+          test -s q2ps3.elf
+          test -s q2ps3.self
+          test -s q2ps3.gnpdrm.pkg
+          test -s build-rsx/pkg/USRDIR/EBOOT.BIN
+          test -z "$(find build-rsx/pkg -type f \( -iname '*.pak' -o -iname '*.wal' -o -iname '*.pcx' \) -print)"
+          "$PS3DEV/ppu/bin/ppu-readelf" -h q2ps3.elf
+          file q2ps3.elf q2ps3.self q2ps3.gnpdrm.pkg
+          sha256sum q2ps3.gnpdrm.pkg | tee pkg.sha256
+
+      - name: Upload PKG and verification outputs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: quake2-ps3-engine-only-pkg
+          path: |
+            quake-src/q2ps3.gnpdrm.pkg
+            quake-src/pkg.sha256
+            quake-src/q2ps3.elf
+            quake-src/q2ps3.self
+          if-no-files-found: warn
+          retention-days: 14
