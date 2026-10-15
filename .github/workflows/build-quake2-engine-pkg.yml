@@ -7,6 +7,14 @@ on:
       - ".github/workflows/build-quake2-engine-pkg.yml"
       - "ci/prepare-quake2-engine-only.sh"
   workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "Quake II source branch, tag, or commit to build"
+        required: true
+        default: "main"
+        type: string
+  schedule:
+    - cron: "17 6 * * 1"
 
 permissions:
   contents: read
@@ -23,7 +31,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: kevums/quake-ii-ps3-v221
-          ref: main
+          ref: ${{ inputs.source_ref || 'main' }}
           path: quake-src
 
       - name: Install host tools
@@ -161,4 +169,4 @@ jobs:
             quake-src/q2ps3.elf
             quake-src/q2ps3.self
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30
