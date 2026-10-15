@@ -59,7 +59,7 @@ jobs:
           URL="https://developer.download.nvidia.com/cg/Cg_3.1/Cg-3.1_April2012_x86_64.tgz"
           SHA512="591b51195193e7e3bbb9f1c2579336d24a179b0a88b955a01f4661bda55543fbccd73cac53033912f2eea8a1068e4c1394c6d286f195963cfb33a0d8b4428e27"
           CG_ROOT="$RUNNER_TEMP/nvidia-cg-toolkit"
-          curl --fail --location --retry 3 --retry-all-errors --connect-timeout 20 \\
+          curl --fail --location --retry 3 --retry-all-errors --connect-timeout 20 \
             --output "$RUNNER_TEMP/cg-toolkit.tgz" "$URL"
           echo "$SHA512  $RUNNER_TEMP/cg-toolkit.tgz" | sha512sum --check -
           mkdir -p "$CG_ROOT"
@@ -82,7 +82,7 @@ jobs:
               outPosition = position;
           }
           CG
-          "$CG_ROOT/usr/bin/cgc" -profile vp40 -entry main \\
+          "$CG_ROOT/usr/bin/cgc" -profile vp40 -entry main \
             -o "$RUNNER_TEMP/cg-smoke.vpo" "$RUNNER_TEMP/cg-smoke.cg"
           test -s "$RUNNER_TEMP/cg-smoke.vpo"
           echo "NVIDIA Cg runtime resolved and test vertex shader compiled."
