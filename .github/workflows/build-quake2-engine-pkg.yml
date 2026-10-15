@@ -49,6 +49,19 @@ jobs:
           echo "PSL1GHT=$RUNNER_TEMP/ps3dev" >> "$GITHUB_ENV"
           echo "PORTLIBS=$RUNNER_TEMP/ps3dev/portlibs/ppu" >> "$GITHUB_ENV"
           printf '%s\n' "$RUNNER_TEMP/ps3dev/bin" "$RUNNER_TEMP/ps3dev/ppu/bin" "$RUNNER_TEMP/ps3dev/spu/bin" >> "$GITHUB_PATH"
+          # Do not suppress tool output while packaging; make failures diagnosable.
+          python3 - "$PS3DEV/ppu_rules" <<'PY'
+          from pathlib import Path
+          import sys
+          p = Path(sys.argv[1])
+          s = p.read_text()
+          for marker in ("$(SELF_NPDRM)", "$(PKG) --contentid"):
+              lines = [line for line in s.splitlines(True) if marker in line]
+              if len(lines) != 1 or ">> /dev/null" not in lines[0]:
+                  raise SystemExit(f"unexpected PSL1GHT packaging rule for {marker}")
+              s = s.replace(lines[0], lines[0].replace(" >> /dev/null", ""), 1)
+          p.write_text(s)
+          PY
           "$RUNNER_TEMP/ps3dev/ppu/bin/ppu-gcc" --version
           "$RUNNER_TEMP/ps3dev/spu/bin/spu-gcc" --version
 
@@ -110,17 +123,17 @@ jobs:
           # First run the recursive build target to compile the ELF and SELF. \
           make -f Makefile.ps3 -j1 "${make_args[@]}" \
           # Then run the PSL1GHT package rule using those built outputs. \
-          make -f Makefile.ps3 -j1 "${make_args[@]}" q2ps3.pkg
+          make -f Makefile.ps3 -j1 VERBOSE=1 "${make_args[@]}" q2ps3.pkg
           test -s q2ps3.elf
           test -s q2ps3.self
           test -s q2ps3.gnpdrm.pkg
           test -s build-rsx/pkg/USRDIR/EBOOT.BIN
           test -s build-rsx/rsx_gl.o
-          test -s build-rsx/rsx_fixed.vpo
-          test -s build-rsx/rsx_fixed.fpo
-          test -s build-rsx/rsx_lightmap.vpo
-          test -s build-rsx/rsx_lightmap.fpo
-          test -s build-rsx/rsx_filter.fpo
+          test -s build-rsx/rsx_fixed.vpo.o
+          test -s build-rsx/rsx_fixed.fpo.o
+          test -s build-rsx/rsx_lightmap.vpo.o
+          test -s build-rsx/rsx_lightmap.fpo.o
+          test -s build-rsx/rsx_filter.fpo.o
           test ! -e build-rsx/sw_rast.o
           test -z "$(find build-rsx/pkg -type f \( -iname '*.pak' -o -iname '*.wal' -o -iname '*.pcx' \) -print)"
           "$PS3DEV/ppu/bin/ppu-readelf" -h q2ps3.elf
