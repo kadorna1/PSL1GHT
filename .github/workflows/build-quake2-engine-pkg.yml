@@ -29,7 +29,7 @@ jobs:
       - name: Install host tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential binutils file curl ca-certificates python3 tar gzip
+          sudo apt-get install -y build-essential binutils file curl ca-certificates python3 tar gzip libgl1 libglu1-mesa libx11-6 libxext6 libxi6 libxmu6 libxt6 libsm6 libice6
 
       - name: Download and verify Bucanero's precompiled PS3DEV/PSL1GHT
         shell: bash
@@ -52,6 +52,41 @@ jobs:
           "$RUNNER_TEMP/ps3dev/ppu/bin/ppu-gcc" --version
           "$RUNNER_TEMP/ps3dev/spu/bin/spu-gcc" --version
 
+      - name: Install NVIDIA Cg Toolkit 3.1 host compiler/runtime (verified)
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://developer.download.nvidia.com/cg/Cg_3.1/Cg-3.1_April2012_x86_64.tgz"
+          SHA512="591b51195193e7e3bbb9f1c2579336d24a179b0a88b955a01f4661bda55543fbccd73cac53033912f2eea8a1068e4c1394c6d286f195963cfb33a0d8b4428e27"
+          CG_ROOT="$RUNNER_TEMP/nvidia-cg-toolkit"
+          curl --fail --location --retry 3 --retry-all-errors --connect-timeout 20 \\
+            --output "$RUNNER_TEMP/cg-toolkit.tgz" "$URL"
+          echo "$SHA512  $RUNNER_TEMP/cg-toolkit.tgz" | sha512sum --check -
+          mkdir -p "$CG_ROOT"
+          tar -xzf "$RUNNER_TEMP/cg-toolkit.tgz" -C "$CG_ROOT"
+          test -x "$CG_ROOT/usr/bin/cgc"
+          test -s "$CG_ROOT/usr/lib64/libCg.so"
+          echo "CG_ROOT=$CG_ROOT" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$CG_ROOT/usr/lib64:$CG_ROOT/usr/lib" >> "$GITHUB_ENV"
+          echo "$CG_ROOT/usr/bin" >> "$GITHUB_PATH"
+          export LD_LIBRARY_PATH="$CG_ROOT/usr/lib64:$CG_ROOT/usr/lib"
+          ldd "$CG_ROOT/usr/bin/cgc" | tee "$RUNNER_TEMP/cgc-ldd.txt"
+          if grep -Fq "not found" "$RUNNER_TEMP/cgc-ldd.txt"; then
+            echo "ERROR: NVIDIA Cg compiler has unresolved shared libraries." >&2
+            exit 1
+          fi
+          cat > "$RUNNER_TEMP/cg-smoke.cg" <<'CG'
+          void main(float4 position : POSITION,
+                    out float4 outPosition : POSITION)
+          {
+              outPosition = position;
+          }
+          CG
+          "$CG_ROOT/usr/bin/cgc" -profile vp40 -entry main \\
+            -o "$RUNNER_TEMP/cg-smoke.vpo" "$RUNNER_TEMP/cg-smoke.cg"
+          test -s "$RUNNER_TEMP/cg-smoke.vpo"
+          echo "NVIDIA Cg runtime resolved and test vertex shader compiled."
+
       - name: Prepare clean engine-only source
         working-directory: quake-src
         run: bash "$GITHUB_WORKSPACE/ci/prepare-quake2-engine-only.sh"
@@ -67,10 +102,10 @@ jobs:
             APPID=QUAKE2000 \
             CONTENTID=UP0001-QUAKE2000_00-0000000000000000 \
             "ICON0=$PS3DEV/bin/ICON0.PNG" PKGFILES= \
-            PS3_NATIVE_RSX=0 PS3_CAMERA=0 PS3_MOVE=0 \
+            PS3_NATIVE_RSX=1 PS3_CAMERA=0 PS3_MOVE=0 \
             PS3_V198_OSK_RECOVERY=1 PS3_FORCE_FONT_SAMPLER_PER_DRAW=1 \
-            PS3_USB_INPUT_BRIDGE=0 PS3_POLYBLEND_2D_OVERRIDE=0 \
-            PS3_SCENE_SCALE_BRIDGE=0 PS3_SAFE_VIDEO=0 \
+            PS3_USB_INPUT_BRIDGE=0 PS3_POLYBLEND_2D_OVERRIDE=1 \
+            PS3_SCENE_SCALE_BRIDGE=1 PS3_SAFE_VIDEO=0 \
           ) \
           # First run the recursive build target to compile the ELF and SELF. \
           make -f Makefile.ps3 -j1 "${make_args[@]}" \
@@ -80,6 +115,13 @@ jobs:
           test -s q2ps3.self
           test -s q2ps3.gnpdrm.pkg
           test -s build-rsx/pkg/USRDIR/EBOOT.BIN
+          test -s build-rsx/rsx_gl.o
+          test -s build-rsx/rsx_fixed.vpo
+          test -s build-rsx/rsx_fixed.fpo
+          test -s build-rsx/rsx_lightmap.vpo
+          test -s build-rsx/rsx_lightmap.fpo
+          test -s build-rsx/rsx_filter.fpo
+          test ! -e build-rsx/sw_rast.o
           test -z "$(find build-rsx/pkg -type f \( -iname '*.pak' -o -iname '*.wal' -o -iname '*.pcx' \) -print)"
           "$PS3DEV/ppu/bin/ppu-readelf" -h q2ps3.elf
           file q2ps3.elf q2ps3.self q2ps3.gnpdrm.pkg
