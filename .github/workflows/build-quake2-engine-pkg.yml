@@ -109,6 +109,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Guard this job to the project's custom native RSX backend.
+          # This is the in-tree GL1-to-RSX implementation, not upstream gzorin/RSXGL.
+          test -s src/client/refresh/rsx/rsx_gl.c
+          test -s src/client/refresh/rsx/rsx_backend.c
+          for shader in rsx_fixed.vcg rsx_fixed.fcg rsx_lightmap.vcg rsx_lightmap.fcg rsx_filter.fcg; do
+            test -s "src/client/refresh/rsx/shaders/$shader"
+          done
+          echo "Renderer: in-tree custom native RSX backend (PS3_NATIVE_RSX=1)"
+          echo "Quake II source revision: $(git rev-parse HEAD)"
+          sha256sum src/client/refresh/rsx/rsx_gl.c src/client/refresh/rsx/rsx_backend.c
           make_args=( \
             BUILD=build-rsx TARGET=q2ps3 \
             "TITLE=Quake II PS3 (game data required)" \
