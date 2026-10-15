@@ -118,6 +118,12 @@ for anchor in (
     if count != 1:
         raise SystemExit(f"Makefile.ps3: expected exactly one disc/ISO switch, found {count}")
     data = data.replace(anchor, "", 1)
+# GCC 10+ defaults to -fno-common; this legacy Quake II code uses
+# tentative global definitions that must be merged as common symbols.
+marker = "CFLAGS = -O2 -Wall -std=gnu99"
+if data.count(marker) != 1:
+    raise SystemExit("Makefile.ps3: could not find the unique base CFLAGS assignment")
+data = data.replace(marker, marker + " -fcommon", 1)
 makefile.write_text(data, encoding="utf-8")
 
 (root / "README.md").write_text("""# Quake II PS3 — engine-only homebrew build
@@ -147,12 +153,12 @@ Set PS3DEV, PSL1GHT, PORTLIBS, and PATH, then run:
       'TITLE=Quake II PS3 (game data required)' APPID=QUAKE2000 \\
       CONTENTID=UP0001-QUAKE2000_00-0000000000000000 \\
       ICON0=$PS3DEV/bin/ICON0.PNG PKGFILES= \\
-      PS3_NATIVE_RSX=1 PS3_CAMERA=0 PS3_MOVE=0 \\
+      PS3_NATIVE_RSX=0 PS3_CAMERA=0 PS3_MOVE=0 \\
       PS3_V198_OSK_RECOVERY=1 PS3_FORCE_FONT_SAMPLER_PER_DRAW=1 \\
       PS3_USB_INPUT_BRIDGE=0 PS3_POLYBLEND_2D_OVERRIDE=0 \\
       PS3_SCENE_SCALE_BRIDGE=0 PS3_SAFE_VIDEO=0 q2ps3.pkg
 
-The installable output is q2ps3.gnpdrm.pkg. The package must not contain PAK
+The build enables -fcommon for GCC 10+ compatibility. The current prebuilt SDK runner uses the software renderer because the NVIDIA Cg runtime required by the native-RSX shader compiler is not included. The installable output is q2ps3.gnpdrm.pkg. The package must not contain PAK
 files, baseq2, private EBOOTs, ISO trees, or commercial release payloads.
 Physical-PS3 install/boot testing remains necessary after a successful build.
 """, encoding="utf-8")
