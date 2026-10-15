@@ -50,7 +50,7 @@ jobs:
           echo "PORTLIBS=$RUNNER_TEMP/ps3dev/portlibs/ppu" >> "$GITHUB_ENV"
           printf '%s\n' "$RUNNER_TEMP/ps3dev/bin" "$RUNNER_TEMP/ps3dev/ppu/bin" "$RUNNER_TEMP/ps3dev/spu/bin" >> "$GITHUB_PATH"
           # Do not suppress tool output while packaging; make failures diagnosable.
-          python3 - "$PS3DEV/ppu_rules" <<'PY'
+          python3 - "$RUNNER_TEMP/ps3dev/ppu_rules" <<'PY'
           from pathlib import Path
           import sys
           p = Path(sys.argv[1])
